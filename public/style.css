@@ -9,8 +9,8 @@ h2, h3 { margin: 0; }
 button { font: inherit; font-size: 13px; cursor: pointer; padding: 5px 12px; border: 1px solid var(--line2); background: var(--panel2); color: var(--text); }
 button:hover { border-color: var(--accent); color: var(--accent); }
 button.on { background: var(--accent); color: var(--on); border-color: var(--accent); }
-input, textarea { font: inherit; padding: 6px 10px; border: 1px solid var(--line2); background: var(--bg); color: var(--text); }
-input:focus, textarea:focus { outline: none; border-color: var(--accent); }
+input, textarea, select { font: inherit; padding: 6px 10px; border: 1px solid var(--line2); background: var(--bg); color: var(--text); }
+input:focus, textarea:focus, select:focus { outline: none; border-color: var(--accent); }
 input[type=checkbox] { accent-color: var(--accent); }
 a[data-act] { cursor: pointer; font-weight: 600; }
 .muted, small { color: var(--muted); }
@@ -78,7 +78,7 @@ dialog::backdrop { background: rgba(0, 0, 0, .65); }
 dialog h2 { margin-bottom: 12px; padding-bottom: 8px; border-bottom: 3px solid var(--accent); }
 dialog h3 { font: 700 12px var(--mono); text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin-top: 14px; }
 dialog label { display: block; margin-bottom: 10px; font: 12px var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
-dialog label input:not([type=checkbox]), dialog textarea { display: block; width: 100%; margin-top: 3px; font-family: system-ui, sans-serif; text-transform: none; letter-spacing: 0; }
+dialog label input:not([type=checkbox]), dialog textarea, dialog select { display: block; width: 100%; margin-top: 3px; font-family: system-ui, sans-serif; text-transform: none; letter-spacing: 0; }
 dialog .chk { display: flex; gap: 8px; align-items: center; }
 .row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
 .row label { flex: 1; }

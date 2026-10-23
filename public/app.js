@@ -227,13 +227,15 @@ function openDetail(id) {
   if (!dlg().open) dlg().showModal();
 }
 
+const timeOpts = (sel) => Array.from({ length: S }, (_, k) => `<option${tm(k) === sel ? ' selected' : ''}>${tm(k)}</option>`).join('');
+
 function openAdd(date) {
   if (!state.data.me) return alert('Nejdřív zadej své jméno (vpravo nahoře).');
   delete dlg().dataset.open;
   dlg().innerHTML = `<form id="evform"><h2>Nová událost</h2>
     <label>Název<input name="title" required maxlength="80"></label>
     <label>Datum<input type="date" name="date" required value="${date || iso(new Date())}"></label>
-    <div class="row"><label>Od<input type="time" name="start" required value="18:00"></label><label>Do<input type="time" name="stop" required value="20:00"></label></div>
+    <div class="row"><label>Od<select name="start">${timeOpts('18:00')}</select></label><label>Do<select name="stop">${timeOpts('20:00')}</select></label></div>
     <label>Popis<textarea name="note" maxlength="500"></textarea></label>
     <label class="chk"><input type="checkbox" name="going" checked> Plánuji jít</label>
     <div class="row"><button type="button" data-act="close">Zrušit</button><button>Přidat</button></div></form>`;

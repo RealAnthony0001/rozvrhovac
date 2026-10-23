@@ -16,10 +16,15 @@ create table if not exists events(
   title text not null check (length(title) between 1 and 80), date date not null,
   start_t time not null, stop_t time not null check (stop_t > start_t),
   note text not null default '' check (length(note) <= 500),
-  created_by bigint not null references members on delete cascade);
+  created_by bigint references members on delete set null);
 create table if not exists rsvps(
   event_id bigint not null references events on delete cascade, member_id bigint not null references members on delete cascade,
   primary key(event_id, member_id));
+
+-- migrace starších instalací: události přežijí odchod autora
+alter table events alter column created_by drop not null;
+alter table events drop constraint if exists events_created_by_fkey;
+alter table events add constraint events_created_by_fkey foreign key (created_by) references members on delete set null;
 
 alter table grp enable row level security;
 alter table members enable row level security;
@@ -88,18 +93,34 @@ begin
   return '{}'::jsonb;
 end $$;
 
+create or replace function _check_event(p_title text, p_note text, p_start time, p_stop time) returns void language plpgsql as $$
+begin
+  if length(btrim(coalesce(p_title, ''))) not between 1 and 80 then raise exception 'Název: 1–80 znaků'; end if;
+  if length(coalesce(p_note, '')) > 500 then raise exception 'Popis: nejvýše 500 znaků'; end if;
+  if p_stop <= p_start then raise exception 'Konec musí být po začátku'; end if;
+end $$;
+revoke all on function _check_event(text, text, time, time) from public, anon, authenticated;
+
 create or replace function api_create_event(p_id text, p_token text, p_title text, p_date date, p_start time, p_stop time, p_note text, p_going boolean)
 returns jsonb language plpgsql security definer set search_path = public as $$
 declare v_me bigint := _me(p_id, p_token); v_id bigint;
 begin
-  p_title := btrim(coalesce(p_title, ''));
-  if length(p_title) not between 1 and 80 then raise exception 'Název: 1–80 znaků'; end if;
-  if length(coalesce(p_note, '')) > 500 then raise exception 'Popis: nejvýše 500 znaků'; end if;
-  if p_stop <= p_start then raise exception 'Konec musí být po začátku'; end if;
+  perform _check_event(p_title, p_note, p_start, p_stop);
   insert into events(group_id, title, date, start_t, stop_t, note, created_by)
-    values (p_id, p_title, p_date, p_start, p_stop, btrim(coalesce(p_note, '')), v_me) returning id into v_id;
+    values (p_id, btrim(p_title), p_date, p_start, p_stop, btrim(coalesce(p_note, '')), v_me) returning id into v_id;
   if p_going then insert into rsvps values (v_id, v_me); end if;
   return jsonb_build_object('id', v_id);
+end $$;
+
+create or replace function api_update_event(p_id text, p_token text, p_event bigint, p_title text, p_date date, p_start time, p_stop time, p_note text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_me bigint := _me(p_id, p_token);
+begin
+  perform _check_event(p_title, p_note, p_start, p_stop);
+  update events set title = btrim(p_title), date = p_date, start_t = p_start, stop_t = p_stop, note = btrim(coalesce(p_note, ''))
+    where id = p_event and group_id = p_id and created_by = v_me;
+  if not found then raise exception 'Upravit může jen autor události'; end if;
+  return '{}'::jsonb;
 end $$;
 
 create or replace function api_set_going(p_id text, p_token text, p_event bigint, p_going boolean) returns jsonb language plpgsql security definer set search_path = public as $$
@@ -117,5 +138,32 @@ declare v_me bigint := _me(p_id, p_token);
 begin
   delete from events where id = p_event and group_id = p_id and created_by = v_me;
   if not found then raise exception 'Smazat může jen autor události'; end if;
+  return '{}'::jsonb;
+end $$;
+
+create or replace function api_rename_member(p_id text, p_token text, p_name text) returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_me bigint := _me(p_id, p_token);
+begin
+  p_name := btrim(coalesce(p_name, ''));
+  if length(p_name) not between 1 and 30 then raise exception 'Jméno: 1–30 znaků'; end if;
+  update members set name = p_name where id = v_me;
+  return '{}'::jsonb;
+exception when unique_violation then raise exception 'Toto jméno už ve skupině je';
+end $$;
+
+-- skupina nemá admina: název může změnit kterýkoli člen
+create or replace function api_rename_group(p_id text, p_token text, p_name text) returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_me bigint := _me(p_id, p_token);
+begin
+  p_name := btrim(coalesce(p_name, ''));
+  if length(p_name) not between 1 and 60 then raise exception 'Název: 1–60 znaků'; end if;
+  update grp set name = p_name where id = p_id;
+  return '{}'::jsonb;
+end $$;
+
+create or replace function api_leave(p_id text, p_token text) returns jsonb language plpgsql security definer set search_path = public as $$
+declare v_me bigint := _me(p_id, p_token);
+begin
+  delete from members where id = v_me; -- rozvrh a účasti se smažou, události zůstanou
   return '{}'::jsonb;
 end $$;

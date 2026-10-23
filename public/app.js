@@ -82,8 +82,6 @@ async function group(gid, token) {
 }
 
 function build() {
-  document.title = state.data.group.name;
-  $('#gname').textContent = '/ ' + state.data.group.name;
   $('#nav').hidden = false;
   $('#hright').innerHTML = '<button data-act="copy">Zkopírovat odkaz pro ostatní</button><span id="who"></span>';
   $('#app').innerHTML = `
@@ -103,7 +101,7 @@ function build() {
   let h = '<div></div>' + DAYS.map((d) => `<div class="dh">${d}</div>`).join('');
   for (let s = 0; s < S; s++) {
     h += `<div class="tl">${s % 4 ? '' : tm(s)}</div>`;
-    for (let d = 0; d < 7; d++) h += `<div class="c${s % 4 ? '' : ' hr'}" data-i="${d * S + s}"></div>`;
+    for (let d = 0; d < 7; d++) h += `<div class="c${s % 4 ? '' : ' hr'}" data-i="${d * S + s}" data-act="cell"></div>`;
   }
   $('#grid').innerHTML = h;
   state.cells = [...document.querySelectorAll('.c')];
@@ -113,8 +111,10 @@ function build() {
 
 function renderAll() {
   const me = meMember();
+  document.title = state.data.group.name;
+  $('#gname').textContent = '/ ' + state.data.group.name;
   $('#who').innerHTML = me
-    ? `<b class="chip2" style="--c:${me.color}"><i></i>${esc(me.name)}</b> <button data-act="copyMine" title="Pro přihlášení na jiném zařízení">Můj osobní odkaz</button>`
+    ? `<b class="chip2" style="--c:${me.color}"><i></i>${esc(me.name)}</b> <button data-act="copyMine" title="Pro přihlášení na jiném zařízení">Můj osobní odkaz</button><button data-act="settings">Nastavení</button>`
     : `<form id="join"><input name="name" placeholder="Tvoje jméno" required maxlength="30"><button>Vstoupit</button></form>`;
   if (!me) $('#join').onsubmit = guard(async (e) => {
     e.preventDefault();
@@ -126,16 +126,40 @@ function renderAll() {
   $('#editBtn').textContent = state.edit ? 'Hotovo' : 'Upravit můj rozvrh';
   $('#grid').classList.toggle('editing', state.edit);
   $('#grid').style.setProperty('--mine', me?.color ?? '#000');
-  $('#info').textContent = state.edit ? 'Klikej nebo táhni a označuj, kdy jsi obsazený/á (ukládá se hned).' : 'Zeleně: volno všech vybraných. Najeď na políčko pro detail.';
+  $('#info').textContent = state.edit ? 'Klikej nebo táhni a označuj, kdy jsi obsazený/á (ukládá se hned).' : 'Zeleně: volno všech vybraných (klik = nová událost). Najeď na políčko pro detail.';
   document.querySelectorAll('nav button').forEach((b) => b.classList.toggle('on', b.dataset.tab === state.tab));
   $('#week').hidden = state.tab !== 'week';
   $('#cal').hidden = state.tab !== 'cal';
   renderSide(); paintGrid(); renderEvents(); renderCal();
 }
 
+function freeWindows(min) {
+  const sel = state.data.members.filter((m) => state.selected.has(m.id));
+  if (!sel.length) return [];
+  const busy = new Set(sel.flatMap((m) => m.busy)), out = [];
+  for (let d = 0; d < 7; d++) {
+    let s0 = null;
+    for (let s = 0; s <= S; s++) {
+      const free = s < S && !busy.has(d * S + s);
+      if (free && s0 === null) s0 = s;
+      if (!free && s0 !== null) { out.push({ d, s0, s1: s, len: s - s0 }); s0 = null; }
+    }
+  }
+  return out.filter((w) => w.len >= min).sort((a, b) => b.len - a.len || a.d - b.d || a.s0 - b.s0);
+}
+
+function openWin(d, s0, s1) { // nejbližší výskyt dne v týdnu, čas podle okna
+  const t = new Date(), delta = (d - ((t.getDay() + 6) % 7) + 7) % 7;
+  openAdd(iso(new Date(t.getFullYear(), t.getMonth(), t.getDate() + delta)), tm(Math.min(s0, S - 2)), s1 >= S ? '23:45' : tm(s1));
+}
+
 function renderSide() {
+  const wins = freeWindows(2).slice(0, 8);
   $('#side').innerHTML = `<h3>Lidé</h3><div class="sel"><button data-act="all">Všichni</button><button data-act="none">Nikdo</button></div>` +
-    state.data.members.map((m) => `<label style="--c:${m.color}"><input type="checkbox" data-act="pick" data-id="${m.id}" ${state.selected.has(m.id) ? 'checked' : ''}><i></i>${esc(m.name)}</label>`).join('');
+    state.data.members.map((m) => `<label style="--c:${m.color}"><input type="checkbox" data-act="pick" data-id="${m.id}" ${state.selected.has(m.id) ? 'checked' : ''}><i></i>${esc(m.name)}</label>`).join('') +
+    `<h3 class="sub">Společné volno</h3>` + (wins.length
+      ? wins.map((w) => `<button class="win" data-act="win" data-d="${w.d}" data-s0="${w.s0}" data-s1="${w.s1}"><b>${DAYS[w.d]}</b> ${tm(w.s0)}–${tm(w.s1)} <small>${String(w.len / 4).replace('.', ',')} h</small></button>`).join('')
+      : '<p class="muted pad">Žádné společné volno.</p>');
 }
 
 function paintGrid() {
@@ -222,30 +246,78 @@ function openDetail(id) {
   dlg().innerHTML = `<h2>${esc(e.title)}</h2><p>${fmtDate(e.date)}, ${e.start}–${e.stop}</p>
     ${e.note ? `<p>${esc(e.note)}</p>` : ''}
     <h3>Kdo jde (${e.going.length})</h3><div>${goingChips(e) || '<small>Zatím nikdo</small>'}</div>
-    <div class="row">${goBtn(e)}${mine ? `<button data-act="del" data-id="${e.id}">Smazat</button>` : ''}<button data-act="close">Zavřít</button></div>`;
+    <div class="row">${goBtn(e)}<button data-act="ics" data-id="${e.id}">Do kalendáře</button>${mine ? `<button data-act="edit-ev" data-id="${e.id}">Upravit</button><button class="danger" data-act="del" data-id="${e.id}">Smazat</button>` : ''}<button data-act="close">Zavřít</button></div>`;
+  delete dlg().dataset.edit;
   dlg().dataset.open = id;
   if (!dlg().open) dlg().showModal();
 }
 
-const timeOpts = (sel) => Array.from({ length: S }, (_, k) => `<option${tm(k) === sel ? ' selected' : ''}>${tm(k)}</option>`).join('');
+function renderDp(month) {
+  const dp = $('.dp'), cur = $('#evform').date.value, today = iso(new Date());
+  const y = month.getFullYear(), mo = month.getMonth(), start = new Date(y, mo, 1 - ((new Date(y, mo, 1).getDay() + 6) % 7));
+  dp.dataset.m = iso(month);
+  let h = `<div class="dpbar"><button type="button" data-act="dpmove" data-d="-1">‹</button><b>${month.toLocaleDateString('cs', { month: 'long', year: 'numeric' })}</b><button type="button" data-act="dpmove" data-d="1">›</button></div><div class="dpg">` + DAYS.map((d) => `<i>${d}</i>`).join('');
+  for (let k = 0; k < 42; k++) {
+    const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + k), key = iso(d);
+    h += `<button type="button" data-act="dppick" data-date="${key}" class="${d.getMonth() !== mo ? 'off ' : ''}${key === cur ? 'sel ' : ''}${key === today ? 'today' : ''}">${d.getDate()}</button>`;
+  }
+  dp.innerHTML = h + '</div>';
+}
 
-function openAdd(date) {
+const timeOpts = (sel) => {
+  const t = Array.from({ length: S }, (_, k) => tm(k));
+  if (!t.includes(sel)) t.push(sel); // starší události mohou mít čas mimo 15min mřížku
+  return t.map((x) => `<option${x === sel ? ' selected' : ''}>${x}</option>`).join('');
+};
+
+function downloadIcs(e) {
+  const dt = (t) => e.date.replace(/-/g, '') + 'T' + t.replace(':', '') + '00'; // čas bez zóny = lokální v kalendáři
+  const txt = (v) => v.replace(/[\\;,]/g, '\\$&').replace(/\r?\n/g, '\\n');
+  // shortcut: řádky se neskládají po 75 B, klienti to běžně snesou; upgrade při problémech s dlouhými popisy
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Rozvrhovac//CS', 'BEGIN:VEVENT', `UID:${state.gid}-${e.id}@rozvrhovac`,
+    `DTSTAMP:${new Date().toISOString().replace(/[-:]|\.\d+/g, '')}`, `DTSTART:${dt(e.start)}`, `DTEND:${dt(e.stop)}`, `SUMMARY:${txt(e.title)}`,
+    ...(e.note ? [`DESCRIPTION:${txt(e.note)}`] : []), 'END:VEVENT', 'END:VCALENDAR'];
+  const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(new Blob([lines.join('\r\n') + '\r\n'], { type: 'text/calendar' })), download: `${e.title.replace(/[^\p{L}\p{N}-]+/gu, '_')}.ics` });
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+}
+
+function openAdd(date, start = '18:00', stop = '20:00', ev) {
   if (!state.data.me) return alert('Nejdřív zadej své jméno (vpravo nahoře).');
   delete dlg().dataset.open;
-  dlg().innerHTML = `<form id="evform"><h2>Nová událost</h2>
-    <label>Název<input name="title" required maxlength="80"></label>
-    <label>Datum<input type="date" name="date" required value="${date || iso(new Date())}"></label>
-    <div class="row"><label>Od<select name="start">${timeOpts('18:00')}</select></label><label>Do<select name="stop">${timeOpts('20:00')}</select></label></div>
-    <label>Popis<textarea name="note" maxlength="500"></textarea></label>
-    <label class="chk"><input type="checkbox" name="going" checked> Plánuji jít</label>
-    <div class="row"><button type="button" data-act="close">Zrušit</button><button>Přidat</button></div></form>`;
+  ev ? (dlg().dataset.edit = ev.id) : delete dlg().dataset.edit;
+  const day = date || iso(new Date());
+  dlg().innerHTML = `<form id="evform"><h2>${ev ? 'Upravit událost' : 'Nová událost'}</h2>
+    <label>Název<input name="title" required maxlength="80" value="${esc(ev?.title ?? '')}"></label>
+    <div class="field dpw">Datum<input type="hidden" name="date" value="${day}"><button type="button" class="dpbtn" data-act="dpopen">${fmtDate(day)}</button><div class="dp" hidden></div></div>
+    <div class="row"><label>Od<select name="start">${timeOpts(start)}</select></label><label>Do<select name="stop">${timeOpts(stop)}</select></label></div>
+    <label>Popis<textarea name="note" maxlength="500">${esc(ev?.note ?? '')}</textarea></label>
+    ${ev ? '' : '<label class="chk"><input type="checkbox" name="going" checked> Plánuji jít</label>'}
+    <div class="row"><button type="button" data-act="close">Zrušit</button><button>${ev ? 'Uložit' : 'Přidat'}</button></div></form>`;
+  dlg().showModal();
+}
+
+function openSettings() {
+  delete dlg().dataset.open; delete dlg().dataset.edit;
+  dlg().innerHTML = `<form id="setform"><h2>Nastavení</h2>
+    <label>Moje jméno<input name="name" required maxlength="30" value="${esc(meMember().name)}"></label>
+    <label>Název skupiny<input name="group" required maxlength="60" value="${esc(state.data.group.name)}"></label>
+    <div class="row"><button type="button" class="danger" data-act="leave">Opustit skupinu</button><button type="button" data-act="close">Zrušit</button><button>Uložit</button></div></form>`;
   dlg().showModal();
 }
 
 dlg().addEventListener('submit', guard(async (e) => {
   e.preventDefault();
   const f = new FormData(e.target);
-  await rpc('api_create_event', { ...auth(), p_title: f.get('title'), p_date: f.get('date'), p_start: f.get('start'), p_stop: f.get('stop'), p_note: f.get('note'), p_going: f.has('going') });
+  if (e.target.id === 'setform') {
+    if (f.get('name') !== meMember().name) await rpc('api_rename_member', { ...auth(), p_name: f.get('name') });
+    if (f.get('group') !== state.data.group.name) await rpc('api_rename_group', { ...auth(), p_name: f.get('group') });
+  } else {
+    const p = { ...auth(), p_title: f.get('title'), p_date: f.get('date'), p_start: f.get('start'), p_stop: f.get('stop'), p_note: f.get('note') };
+    const edit = dlg().dataset.edit;
+    if (edit) await rpc('api_update_event', { ...p, p_event: +edit });
+    else await rpc('api_create_event', { ...p, p_going: f.has('going') });
+  }
   dlg().close(); await load(); renderAll();
 }));
 
@@ -253,10 +325,23 @@ dlg().addEventListener('submit', guard(async (e) => {
 const flash = (el, t) => { const o = el.textContent; el.textContent = t; setTimeout(() => (el.textContent = o), 1500); };
 document.addEventListener('click', guard(async (e) => {
   const el = e.target.closest('[data-act]');
+  if (!e.target.closest('.dpw')) $('.dp')?.setAttribute('hidden', ''); // klik mimo popup ho zavře
   if (!el) return;
   const { act, id, date, tab } = el.dataset;
+  const findEv = () => state.data.events.find((x) => x.id === +id);
   const refresh = async () => { await load(); renderAll(); if (dlg().open && dlg().dataset.open) openDetail(+dlg().dataset.open); };
-  if (act === 'theme') setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
+  if (act === 'dpopen') {
+    const dp = $('.dp'), cur = $('#evform').date.value;
+    dp.hidden = !dp.hidden;
+    if (!dp.hidden) renderDp(new Date(+cur.slice(0, 4), +cur.slice(5, 7) - 1, 1));
+  } else if (act === 'dpmove') {
+    const m = new Date($('.dp').dataset.m + 'T00:00');
+    renderDp(new Date(m.getFullYear(), m.getMonth() + +el.dataset.d, 1));
+  } else if (act === 'dppick') {
+    $('#evform').date.value = date;
+    $('.dpbtn').textContent = fmtDate(date);
+    $('.dp').hidden = true;
+  } else if (act === 'theme') setTheme(document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark');
   else if (act === 'tab') { state.tab = tab; renderAll(); }
   else if (act === 'copy') { await navigator.clipboard.writeText(location.origin + location.pathname + '#/g/' + state.gid); flash(el, 'Zkopírováno'); }
   else if (act === 'copyMine') { await navigator.clipboard.writeText(`${location.origin}${location.pathname}#/g/${state.gid}?t=${state.token}`); flash(el, 'Zkopírováno'); }
@@ -264,10 +349,25 @@ document.addEventListener('click', guard(async (e) => {
   else if (act === 'all' || act === 'none') { state.selected = new Set(act === 'all' ? state.data.members.map((m) => m.id) : []); renderSide(); paintGrid(); }
   else if (act === 'pick') { el.checked ? state.selected.add(+id) : state.selected.delete(+id); paintGrid(); }
   else if (act === 'addEvent') openAdd(date);
+  else if (act === 'win') openWin(+el.dataset.d, +el.dataset.s0, +el.dataset.s1);
+  else if (act === 'cell') {
+    const i = +el.dataset.i, d = (i / S) | 0, s = i % S;
+    const w = !state.edit && el.classList.contains('free') && freeWindows(1).find((x) => x.d === d && x.s0 <= s && s < x.s1);
+    if (w) openWin(w.d, w.s0, w.s1);
+  }
+  else if (act === 'edit-ev') { const ev = findEv(); openAdd(ev.date, ev.start, ev.stop, ev); }
+  else if (act === 'ics') downloadIcs(findEv());
+  else if (act === 'settings') openSettings();
+  else if (act === 'leave') {
+    if (!confirm('Opravdu opustit skupinu? Smaže se tvůj rozvrh a účasti na událostech, tvé události zůstanou.')) return;
+    await rpc('api_leave', auth());
+    localStorage.removeItem('tok:' + state.gid); state.token = ''; state.edit = false;
+    dlg().close(); await load(); renderAll();
+  }
   else if (act === 'open') openDetail(+id);
   else if (act === 'close') dlg().close();
   else if (act === 'going') {
-    const ev = state.data.events.find((x) => x.id === +id);
+    const ev = findEv();
     await rpc('api_set_going', { ...auth(), p_event: +id, p_going: !ev.going.includes(state.data.me) });
     await refresh();
   } else if (act === 'del') {

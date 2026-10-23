@@ -31,8 +31,29 @@ assert.deepEqual([g.events[0].date, g.events[0].start, g.events[0].stop], ['2026
 assert.equal(g.me, g.members.find((m) => m.name === 'Bob').id);
 assert.equal((await call('api_get_group', [id, null])).me, null);
 
+// úprava události
+await fails(call('api_update_event', [id, b.token, ev.id, 'Hack', '2026-11-06', '18:00', '20:00', '']), 'jen autor');
+await fails(call('api_update_event', [id, a.token, ev.id, 'Pivo', '2026-11-06', '20:00', '18:00', '']), 'Konec');
+await call('api_update_event', [id, a.token, ev.id, 'Víno', '2026-11-06', '19:00', '21:30', 'u Anny']);
+const u = (await call('api_get_group', [id, null])).events[0];
+assert.deepEqual([u.title, u.date, u.start, u.stop, u.note, u.going.length], ['Víno', '2026-11-06', '19:00', '21:30', 'u Anny', 2]);
+
+// přejmenování
+await fails(call('api_rename_member', [id, b.token, 'Anna']), 'už ve skupině');
+await call('api_rename_member', [id, b.token, 'Bobík']);
+await call('api_rename_group', [id, b.token, 'Nová parta']);
+const r = await call('api_get_group', [id, null]);
+assert.equal(r.group.name, 'Nová parta');
+assert.ok(r.members.some((m) => m.name === 'Bobík'));
+
+// odchod: rozvrh a účast zmizí, událost zůstane (bez autora), token přestane platit
+await call('api_leave', [id, a.token]);
+await fails(call('api_set_busy', [id, a.token, [1]]), 'Nejsi přihlášen');
+const l = await call('api_get_group', [id, null]);
+assert.equal(l.members.length, 1);
+assert.equal(l.events.length, 1);
+assert.equal(l.events[0].createdBy, null);
+assert.deepEqual(l.events[0].going, [l.members[0].id]);
 await fails(call('api_delete_event', [id, b.token, ev.id]), 'jen autor');
-await call('api_delete_event', [id, a.token, ev.id]);
-assert.equal((await call('api_get_group', [id, null])).events.length, 0);
 
 console.log('OK');

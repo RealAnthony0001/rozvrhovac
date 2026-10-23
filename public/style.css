@@ -77,10 +77,10 @@ dialog { border: 1px solid var(--accent); padding: 20px; width: min(440px, 94vw)
 dialog::backdrop { background: rgba(0, 0, 0, .65); }
 dialog h2 { margin-bottom: 12px; padding-bottom: 8px; border-bottom: 3px solid var(--accent); }
 dialog h3 { font: 700 12px var(--mono); text-transform: uppercase; letter-spacing: .1em; color: var(--muted); margin-top: 14px; }
-dialog label { display: block; margin-bottom: 10px; font: 12px var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+dialog label, dialog .field { display: block; margin-bottom: 10px; font: 12px var(--mono); text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
 dialog label input:not([type=checkbox]), dialog textarea, dialog select { display: block; width: 100%; margin-top: 3px; font-family: system-ui, sans-serif; text-transform: none; letter-spacing: 0; }
 dialog .chk { display: flex; gap: 8px; align-items: center; }
-.row { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 14px; }
 .row label { flex: 1; }
 
 #tip { position: fixed; z-index: 50; display: none; pointer-events: none; max-width: 300px; padding: 8px 12px; font-size: 13px; background: var(--panel); color: var(--text); border: 1px solid var(--accent); box-shadow: 4px 4px 0 rgba(0, 0, 0, .35); }
@@ -96,3 +96,22 @@ dialog .chk { display: flex; gap: 8px; align-items: center; }
   .main, #cal { padding: 14px; }
   .ev { flex-wrap: wrap; }
 }
+
+.dpbtn { display: block; width: 100%; margin-top: 3px; text-align: left; padding: 6px 10px; font: 15px system-ui, sans-serif; letter-spacing: 0; text-transform: none; background: var(--bg); color: var(--text); }
+.dp { margin-top: 4px; padding: 8px; background: var(--panel); border: 1px solid var(--accent); box-shadow: 4px 4px 0 rgba(0, 0, 0, .35); text-transform: none; letter-spacing: 0; }
+.dp[hidden] { display: none; }
+.dpbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; color: var(--text); text-transform: capitalize; font-family: system-ui, sans-serif; }
+.dpg { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; }
+.dpg i { font: 700 11px var(--mono); text-align: center; color: var(--accent); }
+.dpg button { padding: 5px 0; font-family: var(--mono); }
+.dpg .off { color: var(--muted); }
+.dpg .today { border-color: var(--accent); }
+.dpg .sel { background: var(--accent); color: var(--on); border-color: var(--accent); }
+
+#grid:not(.editing) .c.free { cursor: pointer; }
+aside h3.sub { margin-top: 18px; }
+aside .win { display: flex; gap: 8px; align-items: baseline; width: calc(100% - 28px); margin: 0 14px 4px; text-align: left; font-family: var(--mono); font-size: 12px; }
+aside .win small { margin-left: auto; }
+aside .pad { margin: 0 14px; }
+button.danger { color: var(--bad); border-color: var(--bad); }
+button.danger:hover { background: var(--bad); color: var(--on); }

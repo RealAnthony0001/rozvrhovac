@@ -48,9 +48,9 @@ aside i, .chip2 i { width: 10px; height: 10px; flex: none; background: var(--c);
 #grid.editing { cursor: crosshair; touch-action: none; }
 #grid .dh { position: sticky; top: 0; z-index: 1; background: var(--panel2); text-align: center; font-weight: 700; font-size: 12px; text-transform: uppercase; letter-spacing: .08em; line-height: 26px; border-bottom: 1px solid var(--line2); border-left: 1px solid var(--line); color: var(--accent); }
 .tl { font-size: 10px; color: var(--muted); text-align: right; padding-right: 6px; transform: translateY(-7px); }
-.c { background: color-mix(in srgb, var(--bad) calc(var(--b, 0) * 70%), var(--panel2)); border-left: 1px solid var(--line); }
+.c { background: var(--panel2); border-left: 1px solid var(--line); }
 .c.hr { border-top: 1px solid var(--line); }
-.c.free { background: var(--free); }
+.c.free { background: color-mix(in srgb, var(--free) 16%, var(--panel)); }
 .c.mine { background: var(--mine); }
 .c:hover { outline: 2px solid var(--text); outline-offset: -2px; }
 
@@ -233,7 +233,7 @@ aside .people, aside .wins { display: contents; }
   #grid.editing { touch-action: auto; }
   .tl { padding-right: 6px; font: 0.647rem var(--sf); font-variant-numeric: tabular-nums; transform: translateY(-7px); }
   .c { border-left-color: var(--line); }
-  .c.free { background: color-mix(in srgb, var(--free) 72%, var(--panel)); }
+  .c.free { background: color-mix(in srgb, var(--free) 16%, var(--panel)); }
   .c.hr { border-top-color: var(--line); }
   body[data-tab=events] .bar, body[data-tab=events] .gridwrap, body[data-tab=events] aside { display: none; }
   body[data-tab=week] .evhead, body[data-tab=week] #events { display: none; }

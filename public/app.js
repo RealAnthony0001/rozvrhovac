@@ -131,8 +131,8 @@ function build() {
 }
 
 const renderInfo = () => { $('#info').textContent = touch.matches
-    ? (state.edit ? 'Klepni = 1 políčko · podrž a táhni = oblast' : `Zeleně = volno všech vybraných (${state.selected.size}/${state.data.members.length}). Klepni pro detail.`)
-    : (state.edit ? 'Klikej nebo táhni a označuj, kdy jsi obsazený/á (ukládá se hned).' : 'Zeleně: volno všech vybraných (klik = nová událost). Najeď na políčko pro detail.'); };
+    ? (state.edit ? 'Klepni = 1 políčko · podrž a táhni = oblast' : `Pruhy = obsazení lidí, zelený rámeček = volno všech (${state.selected.size}/${state.data.members.length}).`)
+    : (state.edit ? 'Klikej nebo táhni a označuj, kdy jsi obsazený/á (ukládá se hned).' : 'Barevné pruhy = kdy je kdo obsazený, zelený rámeček = volno všech vybraných (klik = nová událost). Najeď na políčko pro detail.'); };
 
 function renderAll() {
   const me = meMember();
@@ -205,14 +205,17 @@ function renderSide() {
 }
 
 function paintGrid() {
-  const sel = state.data.members.filter((m) => state.selected.has(m.id));
-  const sets = sel.map((m) => new Set(m.busy));
+  const sel = state.data.members.filter((m) => state.selected.has(m.id)), n = sel.length;
+  const sets = sel.map((m) => new Set(m.busy)), w = 100 / (n || 1);
+  const free = (i) => !state.edit && n > 0 && sets.every((x) => !x.has(i));
   for (const c of state.cells) {
-    const i = +c.dataset.i;
-    const busy = state.edit ? 0 : sets.filter((s) => s.has(i)).length;
+    const i = +c.dataset.i, d = (i / S) | 0, t = i % S, f = free(i);
     c.classList.toggle('mine', state.edit && state.mine.has(i));
-    c.classList.toggle('free', !state.edit && sel.length > 0 && busy === 0);
-    c.style.setProperty('--b', sel.length ? busy / sel.length : 0);
+    c.classList.toggle('free', f);
+    // obsazení = svislý pruh v barvě každého člověka; volno všech = zelený rámeček kolem celého souvislého bloku
+    const stripes = state.edit || f ? '' : sets.map((x, k) => `${x.has(i) ? sel[k].color : 'transparent'} ${k * w}% ${(k + 1) * w}%`).join(',');
+    c.style.background = stripes && `linear-gradient(90deg,${stripes})`;
+    c.style.boxShadow = f ? [t === 0 || !free(i - 1) ? 'inset 0 2px 0 var(--free)' : '', t === S - 1 || !free(i + 1) ? 'inset 0 -2px 0 var(--free)' : '', d === 0 || !free(i - S) ? 'inset 2px 0 0 var(--free)' : '', d === 6 || !free(i + S) ? 'inset -2px 0 0 var(--free)' : ''].filter(Boolean).join(',') : '';
   }
 }
 

@@ -2,20 +2,20 @@
 <html lang="cs">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Rozvrhovač</title>
 <script>document.documentElement.dataset.theme = localStorage.theme || (matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');</script>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <header class="top">
-  <h1><a href="./">Rozvrhovač</a><span class="code" id="gname"></span></h1>
-  <nav id="nav" hidden><button data-act="tab" data-tab="week">Rozvrh</button><button data-act="tab" data-tab="cal">Kalendář</button></nav>
+  <h1><a href="./" aria-label="Rozvrhovač – úvodní stránka">Rozvrhovač</a><span class="code" id="gname"></span></h1>
+  <nav id="nav" hidden><button data-act="tab" data-tab="week">Rozvrh</button><button class="mo" data-act="tab" data-tab="events">Události</button><button data-act="tab" data-tab="cal">Kalendář</button></nav>
   <div class="right"><span id="hright"></span><button id="theme" data-act="theme"></button></div>
 </header>
 <div id="app"></div>
 <dialog id="dlg"></dialog>
-<div id="tip"></div>
+<div id="tip" aria-live="polite"></div>
 <script type="module" src="app.js"></script>
 </body>
 </html>

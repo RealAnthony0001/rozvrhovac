@@ -9,7 +9,8 @@ const tm = (s) => `${p2(s >> 2)}:${p2((s % 4) * 15)}`;
 const iso = (d) => `${d.getFullYear()}-${p2(d.getMonth() + 1)}-${p2(d.getDate())}`;
 const fmtDate = (s) => new Date(s + 'T00:00').toLocaleDateString('cs', { weekday: 'short', day: 'numeric', month: 'numeric', year: 'numeric' });
 
-const state = { gid: '', token: '', data: null, tab: 'week', edit: false, mine: new Set(), selected: new Set(), known: new Set(), drag: null, month: new Date(), cells: [] };
+const touch = matchMedia('(hover: none)'), narrow = matchMedia('(max-width: 720px)');
+const state = { day: iso(new Date()), gid: '', token: '', data: null, tab: 'week', edit: false, mine: new Set(), selected: new Set(), known: new Set(), drag: null, month: new Date(), cells: [] };
 const byId = (id) => state.data.members.find((m) => m.id === id);
 const meMember = () => state.data.me && byId(state.data.me);
 
@@ -24,7 +25,7 @@ const auth = () => ({ p_id: state.gid, p_token: state.token });
 const guard = (fn) => async (...a) => { try { await fn(...a); } catch (e) { alert(e.message); } };
 
 // ---------- téma ----------
-const setTheme = (t) => { document.documentElement.dataset.theme = localStorage.theme = t; $('#theme').textContent = t === 'dark' ? '☀ Světlý' : '☾ Tmavý'; };
+const setTheme = (t) => { document.documentElement.dataset.theme = localStorage.theme = t; $('#theme').innerHTML = (t === 'dark' ? '☀' : '☾') + `<span class="lg"> ${t === 'dark' ? 'Světlý' : 'Tmavý'}</span>`; };
 setTheme(document.documentElement.dataset.theme);
 
 // ---------- tooltip ----------
@@ -35,20 +36,26 @@ function cellTip(i) {
   if (state.edit) return `<div class="th">${head}</div>${state.mine.has(i) ? 'Obsazeno' : 'Volno'}`;
   const sel = state.data.members.filter((m) => state.selected.has(m.id));
   const busy = sel.filter((m) => m.busy.includes(i)), free = sel.filter((m) => !m.busy.includes(i));
-  return `<div class="th">${head}</div><div class="tr"><span class="lb">Volní (${free.length}/${sel.length})</span>${names(free)}</div><div class="tr"><span class="lb">Obsazení (${busy.length})</span>${names(busy)}</div>`;
+  const w = touch.matches && state.data.me && winAt(i);
+  return `<div class="th">${head}</div>${w ? `<button class="add" data-act="win" data-d="${w.d}" data-s0="${w.s0}" data-s1="${w.s1}">+ Událost ${tm(w.s0)}–${tm(w.s1)}</button>` : ''}<div class="tr"><span class="lb">Volní (${free.length}/${sel.length})</span>${names(free)}</div><div class="tr"><span class="lb">Obsazení (${busy.length})</span>${names(busy)}</div>`;
 }
 function evTip(id) {
   const e = state.data.events.find((x) => x.id === id);
   return `<div class="th">${esc(e.title)}</div>${fmtDate(e.date)}, ${e.start}–${e.stop}${e.note ? `<div class="tr">${esc(e.note)}</div>` : ''}<div class="tr"><span class="lb">Jdou (${e.going.length})</span>${names(e.going.map(byId).filter(Boolean))}</div>`;
 }
 let tipKey = '';
-document.addEventListener('mousemove', (e) => {
-  const el = e.target.closest?.('.c, .chip');
-  if (!el || !state.data) { tip.style.display = tipKey = ''; return; }
+function showTip(el, e) {
   const key = el.dataset.i ? 'c' + el.dataset.i : 'e' + el.dataset.id;
   if (key !== tipKey) { tipKey = key; tip.innerHTML = el.dataset.i ? cellTip(+el.dataset.i) : evTip(+el.dataset.id); tip.style.display = 'block'; }
+  if (touch.matches) return; // na dotyku je panel ukotvený dole (CSS)
   tip.style.left = Math.min(e.clientX + 14, innerWidth - tip.offsetWidth - 8) + 'px';
   tip.style.top = Math.min(e.clientY + 14, innerHeight - tip.offsetHeight - 8) + 'px';
+}
+const hideTip = () => { tip.style.display = tipKey = ''; };
+document.addEventListener('mousemove', (e) => {
+  if (touch.matches) return;
+  const el = e.target.closest?.('.c, .chip');
+  el && state.data ? showTip(el, e) : hideTip();
 });
 
 // ---------- úvod ----------
@@ -83,7 +90,7 @@ async function group(gid, token) {
 
 function build() {
   $('#nav').hidden = false;
-  $('#hright').innerHTML = '<button data-act="copy">Zkopírovat odkaz pro ostatní</button><span id="who"></span>';
+  $('#hright').innerHTML = '<button data-act="copy" aria-label="Kopírovat odkaz pro ostatní"><span class="sm">🔗</span><span class="lg">Kopírovat odkaz</span></button><span id="who"></span>';
   $('#app').innerHTML = `
   <section id="week">
     <aside id="side"></aside>
@@ -97,6 +104,7 @@ function build() {
   <section id="cal" hidden>
     <div class="calbar"><button data-act="prev">‹</button><h2 id="month"></h2><button data-act="next">›</button><button data-act="today">Dnes</button></div>
     <div id="calgrid"></div>
+    <div id="agenda"></div>
   </section>`;
   let h = '<div></div>' + DAYS.map((d) => `<div class="dh">${d}</div>`).join('');
   for (let s = 0; s < S; s++) {
@@ -105,16 +113,20 @@ function build() {
   }
   $('#grid').innerHTML = h;
   state.cells = [...document.querySelectorAll('.c')];
-  $('.gridwrap').scrollTop = 28 * 12; // začni v 7:00
+  $('.gridwrap').scrollTop = 28 * state.cells[0].offsetHeight; // začni v 7:00
   bindGrid();
 }
+
+const renderInfo = () => { $('#info').textContent = touch.matches
+    ? (state.edit ? 'Klepnutí = jedno políčko, přidrž a táhni = víc. Ukládá se hned.' : `Zeleně = volno všech vybraných (${state.selected.size}/${state.data.members.length}). Klepni pro detail.`)
+    : (state.edit ? 'Klikej nebo táhni a označuj, kdy jsi obsazený/á (ukládá se hned).' : 'Zeleně: volno všech vybraných (klik = nová událost). Najeď na políčko pro detail.'); };
 
 function renderAll() {
   const me = meMember();
   document.title = state.data.group.name;
-  $('#gname').textContent = '/ ' + state.data.group.name;
+  $('#gname').innerHTML = `<a href="./">${esc(state.data.group.name)}</a>`;
   $('#who').innerHTML = me
-    ? `<b class="chip2" style="--c:${me.color}"><i></i>${esc(me.name)}</b> <button data-act="copyMine" title="Pro přihlášení na jiném zařízení">Můj osobní odkaz</button><button data-act="settings">Nastavení</button>`
+    ? `<button class="chip2" data-act="settings" aria-label="Nastavení, přihlášen jako ${esc(me.name)}" style="--c:${me.color}"><i></i>${esc(me.name)}<span class="sm" aria-hidden="true"> ⚙</span></button> <button data-act="copyMine" title="Pro přihlášení na jiném zařízení">Osobní odkaz</button><button data-act="settings">Nastavení</button>`
     : `<form id="join"><input name="name" placeholder="Tvoje jméno" required maxlength="30"><button>Vstoupit</button></form>`;
   if (!me) $('#join').onsubmit = guard(async (e) => {
     e.preventDefault();
@@ -126,11 +138,14 @@ function renderAll() {
   $('#editBtn').textContent = state.edit ? 'Hotovo' : 'Upravit můj rozvrh';
   $('#grid').classList.toggle('editing', state.edit);
   $('#grid').style.setProperty('--mine', me?.color ?? '#000');
-  $('#info').textContent = state.edit ? 'Klikej nebo táhni a označuj, kdy jsi obsazený/á (ukládá se hned).' : 'Zeleně: volno všech vybraných (klik = nová událost). Najeď na políčko pro detail.';
-  document.querySelectorAll('nav button').forEach((b) => b.classList.toggle('on', b.dataset.tab === state.tab));
-  $('#week').hidden = state.tab !== 'week';
+  renderInfo();
+  const cur = state.tab === 'events' && !narrow.matches ? 'week' : state.tab;
+  document.querySelectorAll('nav button').forEach((b) => { b.classList.toggle('on', b.dataset.tab === cur); b.dataset.tab === cur ? b.setAttribute('aria-current', 'page') : b.removeAttribute('aria-current'); });
+  document.body.dataset.tab = state.tab; // na mobilu "events" skryje mřížku (CSS)
+  $('#week').hidden = state.tab === 'cal';
   $('#cal').hidden = state.tab !== 'cal';
   renderSide(); paintGrid(); renderEvents(); renderCal();
+  if (tip.style.display === 'block' && tipKey[0] === 'c') tip.innerHTML = cellTip(+tipKey.slice(1)); // panel po dotyku nezestarne při obnově
 }
 
 function freeWindows(min) {
@@ -145,21 +160,28 @@ function freeWindows(min) {
       if (!free && s0 !== null) { out.push({ d, s0, s1: s, len: s - s0 }); s0 = null; }
     }
   }
-  return out.filter((w) => w.len >= min).sort((a, b) => b.len - a.len || a.d - b.d || a.s0 - b.s0);
+  return out.filter((w) => w.len >= min); // pořadí Po→Ne a podle času, jak vznikla ve smyčce
 }
 
-function openWin(d, s0, s1) { // nejbližší výskyt dne v týdnu, čas podle okna
+const winAt = (i) => { const d = (i / S) | 0, s = i % S; return !state.edit && freeWindows(1).find((x) => x.d === d && x.s0 <= s && s < x.s1); };
+
+function openWin(d, s0, s1, date) { // nejbližší výskyt dne v týdnu (nebo daný den), čas podle okna
   const t = new Date(), delta = (d - ((t.getDay() + 6) % 7) + 7) % 7;
-  openAdd(iso(new Date(t.getFullYear(), t.getMonth(), t.getDate() + delta)), tm(Math.min(s0, S - 2)), s1 >= S ? '23:45' : tm(s1));
+  openAdd(date ?? iso(new Date(t.getFullYear(), t.getMonth(), t.getDate() + delta)), tm(Math.min(s0, S - 2)), s1 >= S ? '23:45' : tm(s1));
+}
+
+function renderWins() {
+  const wins = freeWindows(2);
+  $('#wins').innerHTML = wins.length
+    ? wins.map((w) => `<button class="win" data-act="win" data-d="${w.d}" data-s0="${w.s0}" data-s1="${w.s1}"><b>${DAYS[w.d]}</b> ${tm(w.s0)}–${tm(w.s1)} <small>${String(w.len / 4).replace('.', ',')} h</small></button>`).join('')
+    : '<p class="muted pad">Žádné společné volno.</p>';
 }
 
 function renderSide() {
-  const wins = freeWindows(2).slice(0, 8);
-  $('#side').innerHTML = `<h3>Lidé</h3><div class="sel"><button data-act="all">Všichni</button><button data-act="none">Nikdo</button></div>` +
+  $('#side').innerHTML = `<h3>Lidé</h3><div class="people"><div class="sel"><button data-act="all">Všichni</button><button data-act="none">Nikdo</button></div>` +
     state.data.members.map((m) => `<label style="--c:${m.color}"><input type="checkbox" data-act="pick" data-id="${m.id}" ${state.selected.has(m.id) ? 'checked' : ''}><i></i>${esc(m.name)}</label>`).join('') +
-    `<h3 class="sub">Společné volno</h3>` + (wins.length
-      ? wins.map((w) => `<button class="win" data-act="win" data-d="${w.d}" data-s0="${w.s0}" data-s1="${w.s1}"><b>${DAYS[w.d]}</b> ${tm(w.s0)}–${tm(w.s1)} <small>${String(w.len / 4).replace('.', ',')} h</small></button>`).join('')
-      : '<p class="muted pad">Žádné společné volno.</p>');
+    `</div><h3 class="sub">Společné volno</h3><div class="wins" id="wins"></div>`;
+  renderWins();
 }
 
 function paintGrid() {
@@ -184,27 +206,45 @@ function bindGrid() {
       for (let s = Math.min(D.s0, s1); s <= Math.max(D.s0, s1); s++) D.val ? m.add(d * S + s) : m.delete(d * S + s);
     state.mine = m; paintGrid();
   };
+  const wrap = $('.gridwrap');
+  let pend = null, tick = 0, py = 0; // pend: dotyk čeká, jestli bude tap, podržení (malování) nebo rolování
+  const begin = (i, pid) => {
+    state.drag = { d0: (i / S) | 0, s0: i % S, val: !state.mine.has(i), base: new Set(state.mine), last: -1 };
+    try { grid.setPointerCapture(pid); } catch {}
+    drag(i);
+  };
+  const stop = () => { clearInterval(tick); tick = 0; };
   grid.addEventListener('pointerdown', (e) => {
     const c = state.edit && cellAt(e);
     if (!c) return;
-    e.preventDefault();
     const i = +c.dataset.i;
-    state.drag = { d0: (i / S) | 0, s0: i % S, val: !state.mine.has(i), base: new Set(state.mine), last: -1 };
-    grid.setPointerCapture(e.pointerId);
-    drag(i);
+    if (e.pointerType !== 'touch') { e.preventDefault(); return begin(i, e.pointerId); }
+    pend = { i, x: e.clientX, y: e.clientY, id: e.pointerId, t: setTimeout(() => { navigator.vibrate?.(8); begin(i, e.pointerId); pend = null; }, 250) };
   });
+  grid.addEventListener('touchmove', (e) => { if (state.drag) e.preventDefault(); }, { passive: false }); // malování, ne rolování
   grid.addEventListener('pointermove', (e) => {
-    const c = state.drag && cellAt(e);
+    if (pend && Math.hypot(e.clientX - pend.x, e.clientY - pend.y) > 8) { clearTimeout(pend.t); pend = null; } // prst se hýbe = rolování
+    if (!state.drag) return;
+    py = e.clientY;
+    const c = cellAt(e);
     if (c && +c.dataset.i !== state.drag.last) drag(+c.dataset.i);
+    if (!tick) tick = setInterval(() => { // posun při tažení k okraji mřížky
+      const r = wrap.getBoundingClientRect(), dy = py < r.top + 50 ? -10 : py > r.bottom - 50 ? 10 : 0;
+      if (dy) wrap.scrollTop += dy;
+    }, 16);
   });
   const end = guard(async () => {
+    stop();
     if (!state.drag) return;
     state.drag = null;
     try { await rpc('api_set_busy', { ...auth(), p_busy: [...state.mine] }); }
     finally { await load(); paintGrid(); }
   });
-  grid.addEventListener('pointerup', end);
-  grid.addEventListener('pointercancel', end);
+  grid.addEventListener('pointerup', () => {
+    if (pend) { clearTimeout(pend.t); begin(pend.i, pend.id); pend = null; } // krátké klepnutí = jedno políčko
+    end();
+  });
+  grid.addEventListener('pointercancel', () => { if (pend) { clearTimeout(pend.t); pend = null; } else end(); });
 }
 
 const goingChips = (e) => e.going.map(byId).filter(Boolean).map((m) => `<span class="chip2" style="--c:${m.color}"><i></i>${esc(m.name)}</span>`).join('');
@@ -213,13 +253,15 @@ const goBtn = (e) => {
   return me ? `<button data-act="going" data-id="${e.id}">${e.going.includes(me) ? 'Nejdu' : 'Jdu'}</button>` : '';
 };
 
+const evCard = (e, short) => `<div class="ev">
+      <div class="when">${short ? '' : `<span>${fmtDate(e.date)}</span> `}<span class="tm">${e.start}–${e.stop}</span></div>
+      <div class="what"><a data-act="open" data-id="${e.id}">${esc(e.title)}</a><div>${goingChips(e) || '<small>Zatím nikdo</small>'}</div></div>
+      ${goBtn(e)}</div>`;
+
 function renderEvents() {
   const today = iso(new Date());
   const up = state.data.events.filter((e) => e.date >= today);
-  $('#events').innerHTML = up.length ? up.map((e) => `<div class="ev">
-      <div class="when">${fmtDate(e.date)}<br>${e.start}–${e.stop}</div>
-      <div class="what"><a data-act="open" data-id="${e.id}">${esc(e.title)}</a><div>${goingChips(e) || '<small>Zatím nikdo</small>'}</div></div>
-      ${goBtn(e)}</div>`).join('') : '<p class="muted">Zatím žádné nadcházející události.</p>';
+  $('#events').innerHTML = up.length ? up.map((e) => evCard(e)).join('') : '<p class="muted">Zatím žádné nadcházející události.</p>';
 }
 
 function renderCal() {
@@ -230,11 +272,16 @@ function renderCal() {
   let h = DAYS.map((d) => `<div class="dh">${d}</div>`).join('');
   for (let k = 0; k < 42; k++) {
     const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + k), key = iso(d);
-    const evs = state.data.events.filter((e) => e.date === key).map((e) =>
+    const dayEvs = state.data.events.filter((e) => e.date === key);
+    const evs = dayEvs.map((e) =>
       `<div class="chip" data-act="open" data-id="${e.id}">${e.start} ${esc(e.title)} <small>(${e.going.length})</small></div>`).join('');
-    h += `<div class="day${d.getMonth() !== mo ? ' off' : ''}${key === today ? ' today' : ''}" data-act="addEvent" data-date="${key}"><b>${d.getDate()}</b>${evs}</div>`;
+    h += `<div class="day${d.getMonth() !== mo ? ' off' : ''}${key === today ? ' today' : ''}${key === state.day ? ' pick' : ''}" role="button" tabindex="0" aria-label="${fmtDate(key)}, událostí: ${dayEvs.length}" data-date="${key}" data-act="addEvent"><b>${d.getDate()}</b>${evs}</div>`;
   }
   $('#calgrid').innerHTML = h;
+  const day = state.data.events.filter((e) => e.date === state.day);
+  const wd = (new Date(state.day + 'T00:00').getDay() + 6) % 7, fw = freeWindows(2).filter((w) => w.d === wd);
+  $('#agenda').innerHTML = `<div class="evhead"><h2>${fmtDate(state.day)}</h2><button data-act="addEvent" data-date="${state.day}">+ Přidat událost</button></div>` +
+    (day.map((e) => evCard(e, 1)).join('') || '<p class="muted">Tento den nic není.</p>') + (fw.length ? `<h3 class="sub">Společné volno</h3><div class="fw">${fw.map((w) => `<button data-act="dwin" data-d="${w.d}" data-s0="${w.s0}" data-s1="${w.s1}"><b>${tm(w.s0)}–${tm(w.s1)}</b> <small>${String(w.len / 4).replace('.', ',')} h</small></button>`).join('')}</div>` : '');
 }
 
 // ---------- dialogy ----------
@@ -302,10 +349,12 @@ function openSettings() {
   dlg().innerHTML = `<form id="setform"><h2>Nastavení</h2>
     <label>Moje jméno<input name="name" required maxlength="30" value="${esc(meMember().name)}"></label>
     <label>Název skupiny<input name="group" required maxlength="60" value="${esc(state.data.group.name)}"></label>
+    <p class="mo"><button type="button" data-act="copyMine">Zkopírovat můj osobní odkaz</button><small>Pro přihlášení na jiném zařízení.</small></p>
     <div class="row"><button type="button" class="danger" data-act="leave">Opustit skupinu</button><button type="button" data-act="close">Zrušit</button><button>Uložit</button></div></form>`;
   dlg().showModal();
 }
 
+dlg().addEventListener('click', (e) => { const r = dlg().getBoundingClientRect(); if (e.target === dlg() && (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom)) dlg().close(); }); // jen klik na pozadí, ne Enter v poli
 dlg().addEventListener('submit', guard(async (e) => {
   e.preventDefault();
   const f = new FormData(e.target);
@@ -322,10 +371,20 @@ dlg().addEventListener('submit', guard(async (e) => {
 }));
 
 // ---------- akce ----------
-const flash = (el, t) => { const o = el.textContent; el.textContent = t; setTimeout(() => (el.textContent = o), 1500); };
+const flash = (el, t) => { const o = el.innerHTML; el.textContent = t; setTimeout(() => (el.innerHTML = o), 1500); };
 document.addEventListener('click', guard(async (e) => {
   const el = e.target.closest('[data-act]');
   if (!e.target.closest('.dpw')) $('.dp')?.setAttribute('hidden', ''); // klik mimo popup ho zavře
+  const c = e.target.closest('.c');
+  if (touch.matches && c && !state.edit) {
+    if (tipKey === 'c' + c.dataset.i && tip.style.display) hideTip();
+    else { // panel nesmí zakrýt klepnuté políčko
+      showTip(c, e);
+      const over = c.getBoundingClientRect().bottom - tip.getBoundingClientRect().top;
+      if (over > -8) $('.gridwrap').scrollTop += over + 48;
+    }
+  }
+  else if (!e.target.closest('#tip')) hideTip();
   if (!el) return;
   const { act, id, date, tab } = el.dataset;
   const findEv = () => state.data.events.find((x) => x.id === +id);
@@ -346,13 +405,13 @@ document.addEventListener('click', guard(async (e) => {
   else if (act === 'copy') { await navigator.clipboard.writeText(location.origin + location.pathname + '#/g/' + state.gid); flash(el, 'Zkopírováno'); }
   else if (act === 'copyMine') { await navigator.clipboard.writeText(`${location.origin}${location.pathname}#/g/${state.gid}?t=${state.token}`); flash(el, 'Zkopírováno'); }
   else if (act === 'edit') { state.edit = !state.edit; if (!state.edit) await load(); renderAll(); }
-  else if (act === 'all' || act === 'none') { state.selected = new Set(act === 'all' ? state.data.members.map((m) => m.id) : []); renderSide(); paintGrid(); }
-  else if (act === 'pick') { el.checked ? state.selected.add(+id) : state.selected.delete(+id); paintGrid(); }
-  else if (act === 'addEvent') openAdd(date);
-  else if (act === 'win') openWin(+el.dataset.d, +el.dataset.s0, +el.dataset.s1);
+  else if (act === 'all' || act === 'none') { state.selected = new Set(act === 'all' ? state.data.members.map((m) => m.id) : []); renderSide(); renderInfo(); paintGrid(); }
+  else if (act === 'pick') { el.checked ? state.selected.add(+id) : state.selected.delete(+id); renderWins(); renderInfo(); paintGrid(); }
+  else if (act === 'addEvent') { if (narrow.matches && el.matches('.day')) { state.day = date; renderCal(); } else openAdd(date); }
+  else if (act === 'dwin') openWin(+el.dataset.d, +el.dataset.s0, +el.dataset.s1, state.day);
+  else if (act === 'win') { hideTip(); openWin(+el.dataset.d, +el.dataset.s0, +el.dataset.s1); }
   else if (act === 'cell') {
-    const i = +el.dataset.i, d = (i / S) | 0, s = i % S;
-    const w = !state.edit && el.classList.contains('free') && freeWindows(1).find((x) => x.d === d && x.s0 <= s && s < x.s1);
+    const w = !touch.matches && el.classList.contains('free') && winAt(+el.dataset.i);
     if (w) openWin(w.d, w.s0, w.s1);
   }
   else if (act === 'edit-ev') { const ev = findEv(); openAdd(ev.date, ev.start, ev.stop, ev); }
@@ -377,6 +436,8 @@ document.addEventListener('click', guard(async (e) => {
   } else if (act === 'prev' || act === 'next') { state.month = new Date(state.month.getFullYear(), state.month.getMonth() + (act === 'next' ? 1 : -1), 1); renderCal(); }
   else if (act === 'today') { state.month = new Date(); renderCal(); }
 }));
+
+document.addEventListener('keydown', (e) => { if ((e.key === 'Enter' || e.key === ' ') && e.target.matches?.('[role=button]')) { e.preventDefault(); e.target.click(); } });
 
 const m = location.hash.match(/^#\/g\/([\w-]+)(?:\?t=([\w-]+))?$/);
 addEventListener('hashchange', () => location.reload());
